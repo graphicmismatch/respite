@@ -134,6 +134,35 @@
   dialog .body { padding: 14px; display: grid; gap: 10px; }
   dialog .menu button { justify-content: start; }
 
+  /* Home: the project manager shown at launch, over the editor. */
+  #home { position: fixed; inset: 0; z-index: 1000; overflow-y: auto; padding: 24px 16px calc(24px + env(safe-area-inset-bottom));
+    background: radial-gradient(circle, #ffffff10 1.5px, transparent 1.6px) 0 0 / 22px 22px, var(--bg); }
+  #home[hidden] { display: none; }
+  .homeIn { max-width: 1100px; margin: 0 auto; display: grid; gap: 22px; }
+  .homeTop { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  .homeTop .logo { font-size: clamp(34px, 7vw, 64px); text-shadow: 5px 5px 0 var(--ink); }
+  .tagline { font-size: 18px; color: var(--muted); transform: rotate(2deg); }
+  .card { background: var(--panel); border: 3px solid var(--ink); border-radius: 14px; box-shadow: 6px 6px 0 var(--ink); }
+  .newBox { padding: 16px; display: grid; gap: 12px; }
+  .newBox h2, .homeIn > h2 { font: 700 18px var(--pixel); color: var(--cream); }
+  .newBox button { height: 46px; }
+  .sizeBtn { font-family: var(--pixel); }
+  .sizeBtn:nth-child(5n+1) { background: var(--pink); } .sizeBtn:nth-child(5n+2) { background: var(--yellow); }
+  .sizeBtn:nth-child(5n+3) { background: var(--cyan); } .sizeBtn:nth-child(5n+4) { background: var(--lime); }
+  #projects { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 20px; }
+  .proj { padding: 10px; display: grid; gap: 8px; cursor: pointer; transition: transform .1s; }
+  .proj:nth-child(odd) { transform: rotate(-1deg); } .proj:nth-child(even) { transform: rotate(1.2deg); }
+  .proj:active { transform: translate(3px, 3px); box-shadow: 3px 3px 0 var(--ink); }
+  .proj .thumb { aspect-ratio: 1; display: grid; place-items: center; border: 2px solid var(--ink); border-radius: 8px;
+    background: repeating-conic-gradient(#9a9aa2 0 25%, #c4c4ca 0 50%) 0 0 / 16px 16px; overflow: hidden; }
+  .proj .thumb img { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
+  .proj .pname { font-weight: 700; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .proj .meta { font-size: 13px; color: var(--muted); }
+  .proj .row button { flex: 1; height: 34px; min-width: 0; box-shadow: 2px 2px 0 var(--ink); }
+  .empty { padding: 30px; text-align: center; color: var(--muted); font-size: 17px; }
+  #projName { max-width: 26vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; font-size: 16px;
+    padding: 4px 10px; border: 2px dashed var(--muted); border-radius: 8px; cursor: pointer; }
+
   /* Phones and portrait tablets: no side room to float, so the panels dock under the canvas. */
   @media (max-width: 759px), (orientation: portrait) and (max-width: 1099px) {
     #work { display: grid; grid-template-rows: 1fr 45%; }
@@ -154,7 +183,9 @@
 <body>
 <header>
   <div class="logo"><b>R</b><b>E</b><b>S</b><b>P</b><b>I</b><b>T</b><b>E</b></div>
+  <button id="homeBtn" title="Projects"><svg class="i"><use href="icons.svg#home"/></svg></button>
   <button id="menuBtn" title="File"><svg class="i"><use href="icons.svg#file"/></svg></button>
+  <span id="projName" title="Rename project"></span>
   <div id="toggles">
     <button data-toggle="tools" style="--c: var(--pink)" title="Tools panel"><svg class="i"><use href="icons.svg#tools"/></svg></button>
     <button data-toggle="brush" style="--c: var(--lime)" title="Brush panel"><svg class="i"><use href="icons.svg#brush"/></svg></button>
@@ -288,10 +319,7 @@
 <dialog id="menu">
   <h3>File</h3>
   <div class="body menu">
-    <button id="new"><svg class="i"><use href="icons.svg#file"/></svg>New sprite…</button>
-    <button id="open"><svg class="i"><use href="icons.svg#open"/></svg>Open project / PNG…</button>
-    <button id="save"><svg class="i"><use href="icons.svg#save"/></svg>Save project</button>
-    <button id="importSheet"><svg class="i"><use href="icons.svg#sheet"/></svg>Import spritesheet…</button>
+    <button id="save"><svg class="i"><use href="icons.svg#save"/></svg>Save project file</button>
     <button id="exportPng"><svg class="i"><use href="icons.svg#export"/></svg>Export frame PNG</button>
     <button id="exportSheet"><svg class="i"><use href="icons.svg#sheet"/></svg>Export spritesheet PNG</button>
     <button id="resetLayout"><svg class="i"><use href="icons.svg#reset"/></svg>Reset panel layout</button>
@@ -310,6 +338,30 @@
     </div>
   </form>
 </dialog>
+<div id="home">
+  <div class="homeIn">
+    <div class="homeTop">
+      <div class="logo"><b>R</b><b>E</b><b>S</b><b>P</b><b>I</b><b>T</b><b>E</b></div>
+      <span class="tagline">pixel art for weird little guys</span>
+    </div>
+    <div class="card newBox">
+      <h2>New sprite</h2>
+      <div class="row" id="sizes">
+        <button class="sizeBtn" data-size="16">16×16</button>
+        <button class="sizeBtn" data-size="32">32×32</button>
+        <button class="sizeBtn" data-size="64">64×64</button>
+        <button class="sizeBtn" data-size="128">128×128</button>
+        <button class="sizeBtn" data-size="custom">Custom…</button>
+      </div>
+      <div class="row">
+        <button id="open"><svg class="i"><use href="icons.svg#open"/></svg>Open project / PNG…</button>
+        <button id="importSheet"><svg class="i"><use href="icons.svg#sheet"/></svg>Import spritesheet…</button>
+      </div>
+    </div>
+    <h2>Projects</h2>
+    <div id="projects"></div>
+  </div>
+</div>
 <input type="file" id="file" hidden>
 <script type="module" src="app.js"></script>
 </body>

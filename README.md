@@ -2,6 +2,7 @@
 
 A weird little Aseprite-style pixel art editor for Android tablets (and anything with a browser).
 
+- Project manager home screen: thumbnails, rename, duplicate, delete, autosave
 - Pencil, eraser, fill, eyedropper, line, rectangle, select and move tools
 - Pen pressure (size and/or opacity, adjustable curve), palm rejection, fingers and passive styluses welcome
 - Layers, frames, onion skin and playback

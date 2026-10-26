@@ -688,7 +688,7 @@ function stopPlay() {
 }
 
 addEventListener('keydown', e => {
-  if (e.target.matches('input, select') || document.querySelector('dialog[open]')) return;
+  if (e.target.matches('input, select') || document.querySelector('dialog[open]') || !home.hidden) return;
   const k = e.key.toLowerCase(), mod = e.ctrlKey || e.metaKey;
   if (mod && k === 'z') { e.preventDefault(); return e.shiftKey ? redo() : undo(); }
   if (mod && k === 'y') { e.preventDefault(); return redo(); }
@@ -709,17 +709,19 @@ addEventListener('keydown', e => {
 
 // ---------- dialogs & files ----------
 
-// In-app replacement for prompt(), which is unreliable inside the Android WebView.
+// In-app replacement for prompt()/confirm(), which are unreliable inside the Android WebView.
+// value === null makes it a yes/no question: resolves '' for OK, null for Cancel.
 function ask(label, value) {
   const d = $('#ask'), input = $('#askInput');
   $('#askLabel').textContent = label;
-  input.value = value;
+  input.hidden = value === null;
+  input.value = value ?? '';
   d.returnValue = '';
   d.showModal();
-  input.focus();
-  input.select();
+  if (!input.hidden) { input.focus(); input.select(); }
   return new Promise(res => { d.onclose = () => res(d.returnValue === 'ok' ? input.value : null); });
 }
+const parseSize = v => { const m = /^\s*(\d+)\s*(?:[x× ,]\s*(\d+))?\s*$/i.exec(v || ''); return m && [+m[1], +(m[2] ?? m[1])]; };
 
 const menu = $('#menu');
 $('#menuBtn').onclick = () => menu.showModal();
@@ -760,29 +762,16 @@ async function exportPixels(name, px, w, h) {
   out.toBlob(b => saveFile(name, b), 'image/png');
 }
 
-$('#exportPng').onclick = menuAction(() => exportPixels(`frame${frame + 1}.png`, C.composite(doc, frame), doc.w, doc.h));
-$('#exportSheet').onclick = menuAction(() => { const s = C.sheet(doc); exportPixels('spritesheet.png', s.px, s.w, s.h); });
-$('#save').onclick = menuAction(() => saveFile('sprite.respite', new Blob([C.toJSON(doc)], { type: 'application/json' })));
-$('#new').onclick = menuAction(async () => {
-  const m = /^\s*(\d+)\s*[x× ,]\s*(\d+)\s*$/i.exec(await ask('New sprite size (W x H)', `${doc.w}x${doc.h}`) || '');
-  if (!m) return;
-  const w = +m[1], h = +m[2];
-  if (!w || !h || w > C.MAX || h > C.MAX) return alert(`Size must be 1–${C.MAX}`);
-  stopPlay();
-  sel = null;
-  structural(() => { Object.assign(doc, C.newDoc(w, h, doc.palette)); frame = layer = 0; });
-  fit();
-});
+const fileBase = () => (current?.name || 'sprite').replace(/[^\w.-]+/g, '_');
+$('#exportPng').onclick = menuAction(() => exportPixels(`${fileBase()}-frame${frame + 1}.png`, C.composite(doc, frame), doc.w, doc.h));
+$('#exportSheet').onclick = menuAction(() => { const s = C.sheet(doc); exportPixels(`${fileBase()}-sheet.png`, s.px, s.w, s.h); });
+$('#save').onclick = menuAction(() => saveFile(`${fileBase()}.respite`, new Blob([C.toJSON(doc)], { type: 'application/json' })));
 $('#resetLayout').onclick = menuAction(() => {
   layout = {};
   try { localStorage.removeItem('respite.panels'); } catch { /* nothing stored */ }
   applyLayout();
   fit();
 });
-// The same file picker serves Open and Import spritesheet.
-let fileMode = 'open';
-$('#open').onclick = menuAction(() => { fileMode = 'open'; $('#file').click(); });
-$('#importSheet').onclick = menuAction(() => { fileMode = 'sheet'; $('#file').click(); });
 
 async function imagePixels(f, max) {
   const img = await createImageBitmap(f);
@@ -794,35 +783,7 @@ async function imagePixels(f, max) {
   return { px: new Uint32Array(x.getImageData(0, 0, img.width, img.height).data.buffer), w: img.width, h: img.height };
 }
 
-$('#file').onchange = async e => {
-  const f = e.target.files[0];
-  e.target.value = '';
-  if (!f) return;
-  try {
-    let d;
-    if (fileMode === 'sheet') {
-      const { px, w, h } = await imagePixels(f, 8192);
-      const m = /^\s*(\d+)\s*[x× ,]\s*(\d+)\s*$/i.exec(await ask(`Frame size in this ${w}x${h} sheet (W x H)`, `${h}x${h}`) || '');
-      if (!m) return;
-      if (+m[1] > C.MAX || +m[2] > C.MAX || !+m[1] || !+m[2]) throw Error(`frame size must be 1–${C.MAX}`);
-      d = C.fromSheet(px, w, h, +m[1], +m[2], doc.palette);
-    } else if (f.type.startsWith('image/')) {
-      const { px, w, h } = await imagePixels(f, C.MAX);
-      d = C.newDoc(w, h, doc.palette);
-      d.frames[0][0].set(px);
-    } else {
-      d = C.fromJSON(await f.text());
-    }
-    stopPlay();
-    sel = null;
-    structural(() => { Object.assign(doc, d); frame = layer = 0; });
-    fit();
-  } catch (err) {
-    alert('Could not open file: ' + err.message);
-  }
-};
-
-// ---------- autosave (IndexedDB; localStorage is too small for animations) ----------
+// ---------- projects (IndexedDB: 'index' = list of {id, name, updated, w, h, frames, thumb}, 'p:<id>' = the doc) ----------
 
 function idb(mode, fn) {
   return new Promise((res, rej) => {
@@ -836,8 +797,173 @@ function idb(mode, fn) {
     };
   });
 }
-const save = () => idb('readwrite', s => s.put(doc, 'doc')).catch(err => console.warn('autosave failed', err));
+const db = {
+  get: k => idb('readonly', s => s.get(k)),
+  put: (k, v) => idb('readwrite', s => s.put(v, k)),
+  del: k => idb('readwrite', s => s.delete(k)),
+};
+
+let projects = [], current = null;
+const home = $('#home');
+const newId = () => crypto.randomUUID?.() ?? Date.now().toString(36) + Math.random().toString(36).slice(2);
+
+// Card thumbnail of frame 0, at most 128px: small sprites scale up by whole pixels, big ones scale down.
+function thumbnail(d) {
+  const big = Math.max(d.w, d.h), k = big <= 128 ? Math.floor(128 / big) : 128 / big;
+  const t = document.createElement('canvas'), c = document.createElement('canvas');
+  t.width = d.w; t.height = d.h;
+  t.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(C.composite(d, 0).buffer), d.w, d.h), 0, 0);
+  c.width = Math.max(1, Math.round(d.w * k)); c.height = Math.max(1, Math.round(d.h * k));
+  const x = c.getContext('2d');
+  x.imageSmoothingEnabled = false;
+  x.drawImage(t, 0, 0, c.width, c.height);
+  return c.toDataURL();
+}
+
+// Writes the open project and refreshes its card data. The doc goes first so the index never points at nothing.
+async function save() {
+  if (!current) return;
+  Object.assign(current, { updated: Date.now(), w: doc.w, h: doc.h, frames: doc.frames.length, thumb: thumbnail(doc) });
+  try {
+    await db.put('p:' + current.id, doc);
+    await db.put('index', projects);
+  } catch (err) {
+    console.warn('autosave failed', err);
+  }
+}
 document.addEventListener('visibilitychange', () => { if (document.hidden) { clearTimeout(saveTimer); save(); } });
+
+function ago(t) {
+  const s = (Date.now() - t) / 1000;
+  return s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)} min ago` : s < 86400 ? `${Math.floor(s / 3600)} h ago` : new Date(t).toLocaleDateString();
+}
+
+function renderHome() {
+  $('#projects').innerHTML = projects.length ? projects.map(p => `<div class="card proj" data-id="${p.id}">
+      <div class="thumb">${p.thumb ? `<img src="${p.thumb}" alt="">` : ''}</div>
+      <div class="pname">${esc(p.name)}</div>
+      <div class="meta">${p.w}×${p.h} · ${p.frames} frame${p.frames === 1 ? '' : 's'} · ${ago(p.updated)}</div>
+      <div class="row">
+        <button data-act="rename" title="Rename">${icon('rename')}</button>
+        <button data-act="dup" title="Duplicate">${icon('copy')}</button>
+        <button data-act="del" title="Delete">${icon('trash')}</button>
+      </div>
+    </div>`).join('')
+    : '<div class="card empty">No sprites yet. Make one up there ↑</div>';
+}
+
+function showHome() {
+  stopPlay();
+  renderHome();
+  home.hidden = false;
+}
+
+async function goHome() {
+  clearTimeout(saveTimer);
+  await save();
+  current = null;
+  showHome();
+}
+
+function enterEditor(p, d) {
+  current = p;
+  Object.assign(doc, d);
+  hist.undos.length = hist.redos.length = 0;
+  frame = layer = 0;
+  sel = null;
+  stroke = null;
+  home.hidden = true;
+  $('#projName').textContent = p.name;
+  renderPanels(); syncColor(); fit();
+  history.pushState({ editor: true }, ''); // Android back / browser back returns to the projects
+}
+
+async function createProject(d, name) {
+  const p = { id: newId(), name, updated: Date.now() };
+  projects.unshift(p);
+  enterEditor(p, d);
+  await save();
+}
+
+async function openProject(id) {
+  const p = projects.find(x => x.id === id), d = p && await db.get('p:' + id);
+  if (!d) return alert('That project could not be loaded.');
+  projects = [p, ...projects.filter(x => x !== p)]; // most recent first
+  enterEditor(p, d);
+}
+
+const untitled = () => `Sprite ${projects.length + 1}`;
+const nameFromFile = f => f.name.replace(/\.[^.]+$/, '') || untitled();
+
+$('#sizes').addEventListener('click', async e => {
+  const b = e.target.closest('[data-size]');
+  if (!b) return;
+  const size = b.dataset.size === 'custom' ? parseSize(await ask('Sprite size (W x H)', '48x48')) : [+b.dataset.size, +b.dataset.size];
+  if (!size) return;
+  if (!size[0] || !size[1] || size[0] > C.MAX || size[1] > C.MAX) return alert(`Size must be 1–${C.MAX}`);
+  createProject(C.newDoc(size[0], size[1]), untitled());
+});
+
+$('#projects').addEventListener('click', async e => {
+  const card = e.target.closest('.proj');
+  if (!card) return;
+  const p = projects.find(x => x.id === card.dataset.id), act = e.target.closest('[data-act]')?.dataset.act;
+  if (!act) return openProject(p.id);
+  if (act === 'rename') {
+    const name = (await ask('Rename sprite', p.name))?.trim();
+    if (name) { p.name = name; await db.put('index', projects); renderHome(); }
+  } else if (act === 'dup') {
+    const d = await db.get('p:' + p.id);
+    if (!d) return;
+    const copy = { ...p, id: newId(), name: p.name + ' copy', updated: Date.now() };
+    await db.put('p:' + copy.id, d);
+    projects.unshift(copy);
+    await db.put('index', projects);
+    renderHome();
+  } else if (act === 'del') {
+    if (await ask(`Delete "${p.name}"? This can't be undone.`, null) === null) return;
+    projects = projects.filter(x => x !== p);
+    await db.put('index', projects);
+    await db.del('p:' + p.id);
+    renderHome();
+  }
+});
+
+$('#homeBtn').onclick = () => history.back(); // popstate does the work, so back button and home button match
+addEventListener('popstate', () => { if (!home.hidden) return; goHome(); });
+$('#projName').onclick = async () => {
+  const name = (await ask('Rename sprite', current.name))?.trim();
+  if (name) { current.name = name; $('#projName').textContent = name; save(); }
+};
+
+// The same file picker serves Open and Import spritesheet; both make a new project.
+let fileMode = 'open';
+$('#open').onclick = () => { fileMode = 'open'; $('#file').click(); };
+$('#importSheet').onclick = () => { fileMode = 'sheet'; $('#file').click(); };
+$('#file').onchange = async e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  try {
+    let d;
+    if (fileMode === 'sheet') {
+      const { px, w, h } = await imagePixels(f, 8192);
+      const size = parseSize(await ask(`Frame size in this ${w}x${h} sheet (W x H)`, `${h}x${h}`));
+      if (!size) return;
+      if (size[0] > C.MAX || size[1] > C.MAX || !size[0] || !size[1]) throw Error(`frame size must be 1–${C.MAX}`);
+      d = C.fromSheet(px, w, h, size[0], size[1]);
+    } else if (f.type.startsWith('image/')) {
+      const { px, w, h } = await imagePixels(f, C.MAX);
+      d = C.newDoc(w, h);
+      d.frames[0][0].set(px);
+    } else {
+      d = C.fromJSON(await f.text());
+    }
+    createProject(d, nameFromFile(f));
+  } catch (err) {
+    alert('Could not open file: ' + err.message);
+  }
+};
 
 // ---------- boot ----------
 
@@ -845,16 +971,10 @@ setTool('pencil');
 buildSliders();
 setColor(C.hexToU32(doc.palette[0] ?? '#000000'));
 renderPanels();
+showHome(); // the project list fills in once IndexedDB answers
 // Panel heights depend on the pixel font, but don't hang the UI on it.
 await Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 800))]);
 applyLayout();
 fit();
 document.body.classList.add('ready');
-
-// Cold IndexedDB can take seconds on slow devices, so the autosave arrives after the UI is up.
-// If the user already started drawing, keep their new work instead.
-idb('readonly', s => s.get('doc')).then(saved => {
-  if (!saved?.frames?.length || hist.undos.length) return;
-  Object.assign(doc, saved);
-  clampSel(); renderPanels(); syncColor(); fit();
-}).catch(err => console.warn('could not load autosave', err));
+db.get('index').then(list => { projects = list || []; if (!current) renderHome(); }).catch(err => console.warn('could not load projects', err));
