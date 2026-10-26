@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#1a1625">
+<title>Respite</title>
+<link rel="icon" href="data:,">
+<style>
+  @font-face { font-family: Silkscreen; src: url(fonts/silkscreen-latin-400-normal.woff2) format('woff2'); font-weight: 400; }
+  @font-face { font-family: Silkscreen; src: url(fonts/silkscreen-latin-700-normal.woff2) format('woff2'); font-weight: 700; }
+  @font-face { font-family: 'Pixelify Sans'; src: url(fonts/pixelify-sans-latin-400-normal.woff2) format('woff2'); font-weight: 400; }
+  @font-face { font-family: 'Pixelify Sans'; src: url(fonts/pixelify-sans-latin-700-normal.woff2) format('woff2'); font-weight: 700; }
+  :root {
+    --bg: #1a1625; --panel: #2b2438; --well: #211b2c; --ink: #0d0b12; --text: #efe9f7; --muted: #a99bbd; --cream: #fff4dc;
+    --pink: #ff5fa2; --lime: #b8f35b; --cyan: #5be3f3; --yellow: #ffd23f; --orange: #ff8c42; --violet: #a98bff;
+    --pixel: Silkscreen, ui-monospace, monospace; --body: 'Pixelify Sans', ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
+    font: 15px var(--body); user-select: none; -webkit-user-select: none; }
+  body { display: grid; grid-template-rows: auto 1fr auto; height: 100dvh;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+
+  /* chunky buttons that squish when pressed */
+  button, select, input { font: inherit; color: inherit; }
+  button { display: inline-grid; place-items: center; grid-auto-flow: column; gap: 8px; min-width: 40px; height: 40px; padding: 0 10px;
+    border: 2px solid var(--ink); border-radius: 8px; background: var(--cream); color: var(--ink); box-shadow: 3px 3px 0 var(--ink);
+    cursor: pointer; transition: transform .08s, box-shadow .08s; }
+  button:active { transform: translate(3px, 3px); box-shadow: 0 0 0 var(--ink); }
+  button.on { background: var(--c, var(--pink)); transform: rotate(-4deg); }
+  @media (hover: hover) { button:hover { transform: rotate(-3deg) scale(1.06); } button:active { transform: translate(3px, 3px); } }
+  svg.i { width: 18px; height: 18px; }
+  select, input:not([type]), input[type=number] { height: 36px; padding: 0 8px; border: 2px solid var(--ink); border-radius: 8px; background: var(--well); }
+  input[type=range] { accent-color: var(--c, var(--pink)); flex: 1; min-width: 0; }
+  input[type=checkbox] { accent-color: var(--c, var(--pink)); width: 20px; height: 20px; flex: none; }
+  label { display: flex; gap: 8px; align-items: center; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .hint { font-size: 12px; color: var(--muted); }
+
+  header { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--panel); border-bottom: 3px solid var(--ink); overflow-x: auto; }
+  .logo { font: 700 26px var(--pixel); letter-spacing: 1px; transform: rotate(-4deg); text-shadow: 3px 3px 0 var(--ink); white-space: nowrap; }
+  .logo b:nth-child(5n+1) { color: var(--pink); } .logo b:nth-child(5n+2) { color: var(--yellow); } .logo b:nth-child(5n+3) { color: var(--cyan); }
+  .logo b:nth-child(5n+4) { color: var(--lime); } .logo b:nth-child(5n+5) { color: var(--orange); }
+  header .grow { flex: 1; }
+  #toggles { display: flex; gap: 6px; }
+  #toggles button { background: var(--well); color: var(--muted); }
+  #toggles button.on { background: var(--c); color: var(--ink); transform: none; }
+  #fps { width: 90px; flex: none; }
+  #fpsOut { font-family: var(--pixel); min-width: 2ch; }
+
+  /* workspace: canvas fills it, panels float above */
+  #work { position: relative; min-height: 0;
+    background: radial-gradient(circle, #ffffff10 1.5px, transparent 1.6px) 0 0 / 22px 22px, var(--bg); }
+  #stage, #panels { position: absolute; inset: 0; }
+  #panels { pointer-events: none; }
+  body:not(.ready) #panels, body:not(.ready) #zoombar { visibility: hidden; } /* until panels are positioned */
+  #view { display: block; width: 100%; height: 100%; touch-action: none; }
+  #zoombar { position: absolute; top: 10px; left: 50%; transform: translateX(-50%) rotate(1deg); display: flex; gap: 6px; align-items: center;
+    padding: 6px 10px; background: var(--panel); border: 3px solid var(--ink); border-radius: 999px; box-shadow: 4px 4px 0 var(--ink); --c: var(--violet); }
+  #zoombar button { min-width: 34px; height: 32px; padding: 0 6px; border-radius: 999px; }
+  #zoom { width: 110px; flex: none; }
+  #zoomOut { font-family: var(--pixel); width: 58px; text-align: right; }
+
+  .panel { position: absolute; pointer-events: auto; display: flex; flex-direction: column; max-width: 100%; max-height: 100%; min-width: 150px;
+    background: var(--panel); border: 3px solid var(--ink); border-radius: 12px; box-shadow: 6px 6px 0 var(--ink); }
+  .panel.hidden { display: none; }
+  .ph { display: flex; align-items: center; gap: 6px; padding: 4px 4px 4px 12px; background: var(--c); color: var(--ink);
+    border-bottom: 3px solid var(--ink); border-radius: 8px 8px 0 0; cursor: grab; touch-action: none; }
+  .ph span { flex: 1; font: 700 15px var(--pixel); text-transform: uppercase; }
+  .ph button { min-width: 30px; height: 30px; padding: 0; box-shadow: 2px 2px 0 var(--ink); }
+  .ph button svg.i { width: 14px; height: 14px; }
+  .pb { padding: 12px; overflow: auto; flex: 1; min-height: 0; display: grid; gap: 10px; align-content: start; }
+  .panel.collapsed .pb, .panel.collapsed .grip { display: none; }
+  /* Layers and Color: controls stay put, only the layer list / palette scrolls (min-height set from JS). */
+  .panel.collapsed { min-height: 0 !important; }
+  #p-layers .pb, #p-color .pb { display: flex; flex-direction: column; overflow: hidden; }
+  #p-layers .pb > *, #p-color .pb > * { flex: none; }
+  #layers, #palette { flex: 1 1 auto !important; min-height: 44px; overflow-y: auto; padding: 4px; margin: -4px; align-content: start; }
+  .panel.collapsed { height: auto !important; }
+  .grip { position: absolute; right: -3px; bottom: -3px; width: 26px; height: 26px; touch-action: none; cursor: nwse-resize;
+    background: linear-gradient(135deg, transparent 50%, var(--c) 50%); border-bottom-right-radius: 12px; }
+  #p-tools { --c: var(--pink); } #p-brush { --c: var(--lime); } #p-color { --c: var(--cyan); }
+  #p-layers { --c: var(--yellow); } #p-frames { --c: var(--orange); }
+
+  #tools { display: grid; grid-template-columns: repeat(auto-fill, minmax(46px, 1fr)); gap: 8px; }
+  #tools button { height: 46px; }
+  #selActions button { flex: 1; height: 34px; font: 700 12px var(--pixel); }
+
+  #layers { display: grid; gap: 8px; }
+  .layer { display: flex; align-items: center; gap: 6px; padding: 4px 4px 4px 10px; border: 2px solid var(--ink); border-radius: 8px; background: var(--well); cursor: pointer; }
+  .layer.on { background: var(--yellow); color: var(--ink); transform: rotate(-1deg); }
+  .layer .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 6px 0; }
+  .layer input { flex: 1; min-width: 0; height: 32px; color: var(--text); }
+  .layer button { min-width: 34px; height: 34px; padding: 0; box-shadow: 2px 2px 0 var(--ink); }
+
+  /* Aseprite-style color picker */
+  #fgbg { display: flex; align-items: end; gap: 10px; }
+  .swatches { position: relative; width: 64px; height: 56px; flex: none; }
+  .swatches button { position: absolute; width: 40px; height: 40px; padding: 0; border-radius: 6px; }
+  #fgSw { left: 0; top: 0; z-index: 1; } #bgSw { left: 22px; top: 16px; }
+  .swatches button.edit { outline: 3px dashed var(--cyan); outline-offset: 2px; transform: none; }
+  #hex { width: 100%; font-family: var(--pixel); text-transform: uppercase; }
+  #spectrum { display: grid; grid-template-columns: 1fr 22px; gap: 8px; }
+  #sv, #hue, #alphaStrip { width: 100%; display: block; border: 2px solid var(--ink); border-radius: 6px; touch-action: none; }
+  #sv { height: 150px; } #hue { height: 150px; } #alphaStrip { height: 20px; }
+  .tabs { display: flex; gap: 6px; }
+  .tabs button { height: 30px; font: 700 12px var(--pixel); }
+  .slider { display: grid; grid-template-columns: 16px 1fr 56px; gap: 8px; align-items: center; font-family: var(--pixel); }
+  .slider input[type=range] { -webkit-appearance: none; appearance: none; height: 18px; border: 2px solid var(--ink); border-radius: 6px; }
+  .slider input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 10px; height: 24px; border: 2px solid var(--ink); border-radius: 3px; background: var(--cream); }
+  .slider input[type=number] { height: 28px; padding: 0 4px; font-size: 12px; }
+  #palette { display: grid; grid-template-columns: repeat(auto-fill, minmax(28px, 1fr)); gap: 5px; }
+  #palette button { min-width: 0; height: 28px; padding: 0; border-radius: 5px; box-shadow: 2px 2px 0 var(--ink); }
+  #palette button.on { outline: 3px solid var(--cream); outline-offset: 1px; transform: rotate(-8deg); }
+  #addColor { background: var(--well) !important; color: var(--cyan); }
+  .checker { background: repeating-conic-gradient(#9a9aa2 0 25%, #c4c4ca 0 50%) 0 0 / 12px 12px; }
+
+  #frames { display: flex; gap: 10px; overflow-x: auto; padding: 4px 4px 8px; }
+  .frame { flex: none; display: grid; gap: 4px; justify-items: center; padding: 6px; border: 2px solid var(--ink); border-radius: 8px; background: var(--well);
+    font: 700 12px var(--pixel); cursor: pointer; box-shadow: 3px 3px 0 var(--ink); }
+  .frame:nth-child(odd) { transform: rotate(1.5deg); } .frame:nth-child(even) { transform: rotate(-1.5deg); }
+  .frame.on { background: var(--orange); color: var(--ink); transform: translateY(-3px) rotate(0); }
+  .frame canvas { width: 52px; height: 52px; object-fit: contain; image-rendering: pixelated; }
+
+  footer { display: flex; gap: 18px; padding: 5px 14px; background: var(--panel); border-top: 3px solid var(--ink); white-space: nowrap; overflow: hidden;
+    font: 11px var(--pixel); color: var(--muted); }
+  footer .grow { flex: 1; }
+
+  dialog { margin: auto; background: var(--panel); color: var(--text); border: 3px solid var(--ink); border-radius: 12px; padding: 0; min-width: 280px;
+    box-shadow: 8px 8px 0 var(--ink); }
+  dialog::backdrop { background: #0d0b12cc; }
+  dialog h3 { padding: 8px 14px; background: var(--violet); color: var(--ink); font: 700 16px var(--pixel); border-bottom: 3px solid var(--ink); }
+  dialog .body { padding: 14px; display: grid; gap: 10px; }
+  dialog .menu button { justify-content: start; }
+
+  /* Phones and portrait tablets: no side room to float, so the panels dock under the canvas. */
+  @media (max-width: 759px), (orientation: portrait) and (max-width: 1099px) {
+    #work { display: grid; grid-template-rows: 1fr 45%; }
+    #stage { position: relative; }
+    #panels { position: static; pointer-events: auto; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      align-items: start; gap: 14px; padding: 12px; border-top: 3px solid var(--ink); }
+    .panel, .panel.hidden { position: static; display: flex; width: auto !important; height: auto !important; }
+    .grip, .ph .close { display: none; }
+    .ph { cursor: default; }
+    #toggles { display: none; }
+  }
+  @media (max-width: 759px) {
+    .logo { font-size: 20px; }
+    footer .wide, .fpsLabel { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo"><b>R</b><b>E</b><b>S</b><b>P</b><b>I</b><b>T</b><b>E</b></div>
+  <button id="menuBtn" title="File"><svg class="i"><use href="icons.svg#file"/></svg></button>
+  <div id="toggles">
+    <button data-toggle="tools" style="--c: var(--pink)" title="Tools panel"><svg class="i"><use href="icons.svg#tools"/></svg></button>
+    <button data-toggle="brush" style="--c: var(--lime)" title="Brush panel"><svg class="i"><use href="icons.svg#brush"/></svg></button>
+    <button data-toggle="color" style="--c: var(--cyan)" title="Color panel"><svg class="i"><use href="icons.svg#logo"/></svg></button>
+    <button data-toggle="layers" style="--c: var(--yellow)" title="Layers panel"><svg class="i"><use href="icons.svg#layers"/></svg></button>
+    <button data-toggle="frames" style="--c: var(--orange)" title="Timeline panel"><svg class="i"><use href="icons.svg#timeline"/></svg></button>
+  </div>
+  <span class="grow"></span>
+  <button id="undo" title="Undo (Ctrl+Z, two-finger tap)"><svg class="i"><use href="icons.svg#undo"/></svg></button>
+  <button id="redo" title="Redo (Ctrl+Y, three-finger tap)"><svg class="i"><use href="icons.svg#redo"/></svg></button>
+  <button id="play" style="--c: var(--lime)" title="Play (Enter)"><svg class="i"><use href="icons.svg#play"/></svg></button>
+  <label><span class="fpsLabel hint">FPS</span><input type="range" id="fps" min="1" max="60"><span id="fpsOut"></span></label>
+</header>
+
+<div id="work">
+  <div id="stage">
+    <canvas id="view"></canvas>
+    <div id="zoombar">
+      <button id="zoomMinus" title="Zoom out"><svg class="i"><use href="icons.svg#zoom-out"/></svg></button>
+      <input type="range" id="zoom" min="1" max="64">
+      <span id="zoomOut"></span>
+      <button id="zoomPlus" title="Zoom in"><svg class="i"><use href="icons.svg#zoom-in"/></svg></button>
+      <button id="fit" title="Fit (0)"><svg class="i"><use href="icons.svg#fit"/></svg></button>
+      <button id="grid" class="on" title="Pixel grid"><svg class="i"><use href="icons.svg#grid"/></svg></button>
+    </div>
+  </div>
+
+  <div id="panels">
+    <div class="panel" id="p-tools">
+      <div class="ph"><span>Tools</span><button class="min" title="Collapse"><svg class="i"><use href="icons.svg#min"/></svg></button><button class="close" title="Close"><svg class="i"><use href="icons.svg#close"/></svg></button></div>
+      <div class="pb">
+        <div id="tools">
+          <button data-tool="pencil" title="Pencil (B)"><svg class="i"><use href="icons.svg#pencil"/></svg></button>
+          <button data-tool="eraser" title="Eraser (E)"><svg class="i"><use href="icons.svg#eraser"/></svg></button>
+          <button data-tool="fill" title="Fill (G)"><svg class="i"><use href="icons.svg#fill"/></svg></button>
+          <button data-tool="picker" title="Eyedropper (I)"><svg class="i"><use href="icons.svg#picker"/></svg></button>
+          <button data-tool="line" title="Line (L)"><svg class="i"><use href="icons.svg#line"/></svg></button>
+          <button data-tool="rect" title="Rectangle (U)"><svg class="i"><use href="icons.svg#rect"/></svg></button>
+          <button data-tool="hand" title="Pan (H)"><svg class="i"><use href="icons.svg#hand"/></svg></button>
+          <button data-tool="select" title="Select (M)"><svg class="i"><use href="icons.svg#select"/></svg></button>
+          <button data-tool="move" title="Move selection or layer (V)"><svg class="i"><use href="icons.svg#move"/></svg></button>
+        </div>
+        <div class="row" id="selActions">
+          <button id="selAll" title="Select all (Ctrl+A)">All</button>
+          <button id="selNone" title="Deselect (Esc)">None</button>
+          <button id="selClear" title="Clear selected pixels (Del)">Clear</button>
+        </div>
+      </div>
+      <div class="grip"></div>
+    </div>
+
+    <div class="panel" id="p-brush">
+      <div class="ph"><span>Brush</span><button class="min" title="Collapse"><svg class="i"><use href="icons.svg#min"/></svg></button><button class="close" title="Close"><svg class="i"><use href="icons.svg#close"/></svg></button></div>
+      <div class="pb">
+        <label>Size <input type="range" id="size" min="1" max="16" value="1"> <span id="sizeOut">1</span></label>
+        <label>Pen pressure
+          <select id="dyn">
+            <option value="off">Off</option>
+            <option value="size" selected>Size</option>
+            <option value="alpha">Opacity</option>
+            <option value="size+alpha">Size + opacity</option>
+          </select>
+        </label>
+        <label>Curve <input type="range" id="gamma" min="0.3" max="3" step="0.1" value="1"> <span id="gammaOut">1</span></label>
+        <label><input type="checkbox" id="fingers" checked> Fingers draw</label>
+        <div class="hint">Turn off to make fingers only pan &amp; zoom.</div>
+      </div>
+      <div class="grip"></div>
+    </div>
+
+    <div class="panel" id="p-color">
+      <div class="ph"><span>Color</span><button class="min" title="Collapse"><svg class="i"><use href="icons.svg#min"/></svg></button><button class="close" title="Close"><svg class="i"><use href="icons.svg#close"/></svg></button></div>
+      <div class="pb">
+        <div id="fgbg">
+          <div class="swatches">
+            <button id="bgSw" class="checker" title="Background color"></button>
+            <button id="fgSw" class="checker edit" title="Foreground color"></button>
+          </div>
+          <button id="swap" title="Swap colors (X)"><svg class="i"><use href="icons.svg#swap"/></svg></button>
+          <input id="hex" spellcheck="false" aria-label="Hex color">
+        </div>
+        <div id="spectrum"><canvas id="sv"></canvas><canvas id="hue"></canvas></div>
+        <canvas id="alphaStrip"></canvas>
+        <div class="tabs"><button data-mode="rgb" class="on">RGB</button><button data-mode="hsv">HSV</button></div>
+        <div id="sliders"></div>
+        <div id="palette"></div>
+        <div class="hint">Long-press a swatch to remove it.</div>
+      </div>
+      <div class="grip"></div>
+    </div>
+
+    <div class="panel" id="p-layers">
+      <div class="ph"><span>Layers</span><button class="min" title="Collapse"><svg class="i"><use href="icons.svg#min"/></svg></button><button class="close" title="Close"><svg class="i"><use href="icons.svg#close"/></svg></button></div>
+      <div class="pb">
+        <div class="row">
+          <button id="addLayer" title="New layer"><svg class="i"><use href="icons.svg#plus"/></svg></button>
+          <button id="delLayer" title="Delete layer"><svg class="i"><use href="icons.svg#trash"/></svg></button>
+          <button id="layerUp" title="Move layer up"><svg class="i"><use href="icons.svg#up"/></svg></button>
+          <button id="layerDown" title="Move layer down"><svg class="i"><use href="icons.svg#down"/></svg></button>
+          <button id="renameLayer" title="Rename layer"><svg class="i"><use href="icons.svg#rename"/></svg></button>
+        </div>
+        <div id="layers"></div>
+      </div>
+      <div class="grip"></div>
+    </div>
+
+    <div class="panel" id="p-frames">
+      <div class="ph"><span>Timeline</span><button class="min" title="Collapse"><svg class="i"><use href="icons.svg#min"/></svg></button><button class="close" title="Close"><svg class="i"><use href="icons.svg#close"/></svg></button></div>
+      <div class="pb">
+        <div class="row">
+          <button id="addFrame" title="New frame"><svg class="i"><use href="icons.svg#plus"/></svg></button>
+          <button id="dupFrame" title="Duplicate frame"><svg class="i"><use href="icons.svg#copy"/></svg></button>
+          <button id="frameLeft" title="Move frame left"><svg class="i"><use href="icons.svg#left"/></svg></button>
+          <button id="frameRight" title="Move frame right"><svg class="i"><use href="icons.svg#right"/></svg></button>
+          <button id="delFrame" title="Delete frame"><svg class="i"><use href="icons.svg#trash"/></svg></button>
+          <label><input type="checkbox" id="onion"> Onion skin</label>
+        </div>
+        <div id="frames"></div>
+      </div>
+      <div class="grip"></div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <span id="stTool"></span><span id="stColor"></span><span id="stBrush" class="wide"></span><span id="stLayer" class="wide"></span>
+  <span class="grow"></span>
+  <span id="stFrame"></span><span id="stSize"></span><span id="stPos"></span>
+</footer>
+
+<dialog id="menu">
+  <h3>File</h3>
+  <div class="body menu">
+    <button id="new"><svg class="i"><use href="icons.svg#file"/></svg>New sprite…</button>
+    <button id="open"><svg class="i"><use href="icons.svg#open"/></svg>Open project / PNG…</button>
+    <button id="save"><svg class="i"><use href="icons.svg#save"/></svg>Save project</button>
+    <button id="importSheet"><svg class="i"><use href="icons.svg#sheet"/></svg>Import spritesheet…</button>
+    <button id="exportPng"><svg class="i"><use href="icons.svg#export"/></svg>Export frame PNG</button>
+    <button id="exportSheet"><svg class="i"><use href="icons.svg#sheet"/></svg>Export spritesheet PNG</button>
+    <button id="resetLayout"><svg class="i"><use href="icons.svg#reset"/></svg>Reset panel layout</button>
+    <button id="closeMenu" style="background: var(--well); color: var(--text)">Close</button>
+  </div>
+</dialog>
+<dialog id="ask">
+  <form method="dialog">
+    <h3 id="askLabel"></h3>
+    <div class="body">
+      <input id="askInput" autocomplete="off" spellcheck="false">
+      <div class="row" style="justify-content: end">
+        <button value="ok" style="background: var(--lime)">OK</button>
+        <button value="cancel" style="background: var(--well); color: var(--text)">Cancel</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+<input type="file" id="file" hidden>
+<script type="module" src="app.js"></script>
+</body>
+</html>

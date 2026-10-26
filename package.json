@@ -1,0 +1,23 @@
+{
+  "name": "respite",
+  "version": "0.1.0",
+  "description": "Aseprite-like pixel art editor with pen pressure, for Android, desktop and web",
+  "private": true,
+  "type": "module",
+  "author": "graphicmismatch",
+  "license": "MIT",
+  "scripts": {
+    "test": "node test.mjs",
+    "serve": "python3 -m http.server -d www 8080",
+    "apk": "cap sync android && cd android && ./gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/filesystem": "^8.1.5",
+    "@capacitor/share": "^8.0.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.3"
+  }
+}
